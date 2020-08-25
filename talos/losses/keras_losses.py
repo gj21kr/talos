@@ -158,6 +158,18 @@ class MeanSquaredLogarithmicError(LossFunctionWrapper):
                name='mean_squared_logarithmic_error'):
     super(MeanSquaredLogarithmicError, self).__init__(
         mean_squared_logarithmic_error, name=name, reduction=reduction)
+        
+class DiceCoefLoss(LossFunctionWrapper):
+  def __init__(self,
+               from_logits=False,
+               label_smoothing=0,
+               reduction=losses_utils.Reduction.AUTO,
+               name='binary_crossentropy'):
+    super(DiceCoefLoss, self).__init__(
+        dice_coef_loss,
+        name=name,
+        label_smoothing=label_smoothing)
+    self.from_logits = from_logits
 
 class BinaryCrossentropy(LossFunctionWrapper):
   def __init__(self,
