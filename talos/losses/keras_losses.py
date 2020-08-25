@@ -42,52 +42,112 @@ from tensorflow.python.util import dispatch
 from tensorflow.python.util.tf_export import keras_export
 from tensorflow.tools.docs import doc_controls
 
+@keras_export('keras.losses.Loss')
 class Loss(object):
+  """Loss base class.
+  To be implemented by subclasses:
+  * `call()`: Contains the logic for loss calculation using `y_true`, `y_pred`.
+  Example subclass implementation:
+  ```
+  class MeanSquaredError(Loss):
+    def call(self, y_true, y_pred):
+      y_pred = ops.convert_to_tensor(y_pred)
+      y_true = math_ops.cast(y_true, y_pred.dtype)
+      return K.mean(math_ops.square(y_pred - y_true), axis=-1)
+  ```
+  When used with `tf.distribute.Strategy`, outside of built-in training loops
+  such as `tf.keras` `compile` and `fit`, please use 'SUM' or 'NONE' reduction
+  types, and reduce losses explicitly in your training loop. Using 'AUTO' or
+  'SUM_OVER_BATCH_SIZE' will raise an error.
+  Please see
+  https://www.tensorflow.org/alpha/tutorials/distribute/training_loops for more
+  details on this.
+  You can implement 'SUM_OVER_BATCH_SIZE' using global batch size like:
+  ```
+  with strategy.scope():
+    loss_obj = tf.keras.losses.CategoricalCrossentropy(
+        reduction=tf.keras.losses.Reduction.NONE)
+    ....
+    loss = (tf.reduce_sum(loss_obj(labels, predictions)) *
+            (1. / global_batch_size))
+  ```
+  Args:
+    reduction: (Optional) Type of `tf.keras.losses.Reduction` to apply to loss.
+      Default value is `AUTO`. `AUTO` indicates that the reduction option will
+      be determined by the usage context. For almost all cases this defaults to
+      `SUM_OVER_BATCH_SIZE`.
+      When used with `tf.distribute.Strategy`, outside of built-in training
+      loops such as `tf.keras` `compile` and `fit`, using `AUTO` or
+      `SUM_OVER_BATCH_SIZE` will raise an error. Please see
+      https://www.tensorflow.org/alpha/tutorials/distribute/training_loops
+      for more details on this.
+    name: Optional name for the op.
+  """
 
-  def __init__(self, reduction=losses_utils.Reduction.AUTO, name=None):
-    losses_utils.Reduction.validate(reduction)
+  def __init__(self, reduction=losses_utils.ReductionV2.AUTO, name=None):
+    losses_utils.ReductionV2.validate(reduction)
     self.reduction = reduction
     self.name = name
-    # SUM_OVER_BATCH is only allowed in losses managed by `fit` or
-    # CannedEstimators.
-    self._allow_sum_over_batch_size = False
-    self._set_name_scope()
-
-  def _set_name_scope(self):
-    if self.name is None:
-      self._name_scope = self.__class__.__name__
-    elif self.name == '<lambda>':
-      self._name_scope = 'lambda'
-    else:
-      # E.g. '_my_loss' => 'my_loss'
-      self._name_scope = self.name.strip('_')
 
   def __call__(self, y_true, y_pred, sample_weight=None):
+    """Invokes the `Loss` instance.
+    Args:
+      y_true: Ground truth values. shape = `[batch_size, d0, .. dN]`
+      y_pred: The predicted values. shape = `[batch_size, d0, .. dN]`
+      sample_weight: Optional `sample_weight` acts as a
+        coefficient for the loss. If a scalar is provided, then the loss is
+        simply scaled by the given value. If `sample_weight` is a tensor of size
+        `[batch_size]`, then the total loss for each sample of the batch is
+        rescaled by the corresponding element in the `sample_weight` vector. If
+        the shape of `sample_weight` is `[batch_size, d0, .. dN-1]` (or can be
+        broadcasted to this shape), then each loss element of `y_pred` is scaled
+        by the corresponding value of `sample_weight`. (Note on`dN-1`: all loss
+        functions reduce by 1 dimension, usually axis=-1.)
+    Returns:
+      Weighted loss float `Tensor`. If `reduction` is `NONE`, this has
+        shape `[batch_size, d0, .. dN-1]`; otherwise, it is scalar. (Note `dN-1`
+        because all loss functions reduce by 1 dimension, usually axis=-1.)
+    Raises:
+      ValueError: If the shape of `sample_weight` is invalid.
+    """
     # If we are wrapping a lambda function strip '<>' from the name as it is not
     # accepted in scope name.
+    scope_name = 'lambda' if self.name == '<lambda>' else self.name
     graph_ctx = tf_utils.graph_context_for_symbolic_tensors(
         y_true, y_pred, sample_weight)
-    with K.name_scope(self._name_scope), graph_ctx:
-      ag_call = autograph.tf_convert(self.call, ag_ctx.control_status_ctx())
-      losses = ag_call(y_true, y_pred)
+    with K.name_scope(scope_name or self.__class__.__name__), graph_ctx:
+      losses = self.call(y_true, y_pred)
       return losses_utils.compute_weighted_loss(
           losses, sample_weight, reduction=self._get_reduction())
 
   @classmethod
   def from_config(cls, config):
+    """Instantiates a `Loss` from its config (output of `get_config()`).
+    Args:
+        config: Output of `get_config()`.
+    Returns:
+        A `Loss` instance.
+    """
     return cls(**config)
 
   def get_config(self):
     return {'reduction': self.reduction, 'name': self.name}
 
+  @abc.abstractmethod
+  @doc_controls.for_subclass_implementers
   def call(self, y_true, y_pred):
+    """Invokes the `Loss` instance.
+    Args:
+      y_true: Ground truth values, with the same shape as 'y_pred'.
+      y_pred: The predicted values.
+    """
     NotImplementedError('Must be implemented in subclasses.')
 
   def _get_reduction(self):
-    if (not self._allow_sum_over_batch_size and
-        distribution_strategy_context.has_strategy() and
-        (self.reduction == losses_utils.Reduction.AUTO or
-         self.reduction == losses_utils.Reduction.SUM_OVER_BATCH_SIZE)):
+    """Handles `AUTO` reduction cases and returns the reduction value."""
+    if distribution_strategy_context.has_strategy() and (
+        self.reduction == losses_utils.ReductionV2.AUTO or
+        self.reduction == losses_utils.ReductionV2.SUM_OVER_BATCH_SIZE):
       raise ValueError(
           'Please use `tf.keras.losses.Reduction.SUM` or '
           '`tf.keras.losses.Reduction.NONE` for loss reduction when losses are '
@@ -99,11 +159,11 @@ class Loss(object):
           'reduction=tf.keras.losses.Reduction.NONE)\n....\n'
           '    loss = tf.reduce_sum(loss_obj(labels, predictions)) * '
           '(1. / global_batch_size)\n```\nPlease see '
-          'https://www.tensorflow.org/tutorials/distribute/custom_training'
+          'https://www.tensorflow.org/alpha/tutorials/distribute/training_loops'
           ' for more details.')
 
-    if self.reduction == losses_utils.Reduction.AUTO:
-      return losses_utils.Reduction.SUM_OVER_BATCH_SIZE
+    if self.reduction == losses_utils.ReductionV2.AUTO:
+      return losses_utils.ReductionV2.SUM_OVER_BATCH_SIZE
     return self.reduction
 
 
@@ -131,34 +191,7 @@ class LossFunctionWrapper(Loss):
     base_config = super(LossFunctionWrapper, self).get_config()
     return dict(list(base_config.items()) + list(config.items()))
 
-class MeanSquaredError(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='mean_squared_error'):
-    super(MeanSquaredError, self).__init__(
-        mean_squared_error, name=name, reduction=reduction)
-
-class MeanAbsoluteError(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='mean_absolute_error'):
-    super(MeanAbsoluteError, self).__init__(
-        mean_absolute_error, name=name, reduction=reduction)
-
-class MeanAbsolutePercentageError(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='mean_absolute_percentage_error'):
-    super(MeanAbsolutePercentageError, self).__init__(
-        mean_absolute_percentage_error, name=name, reduction=reduction)
-
-class MeanSquaredLogarithmicError(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='mean_squared_logarithmic_error'):
-    super(MeanSquaredLogarithmicError, self).__init__(
-        mean_squared_logarithmic_error, name=name, reduction=reduction)
-        
+@keras_export('keras.losses.DiceCoefLoss')   
 class DiceCoefLoss(LossFunctionWrapper):
   def __init__(self,
                from_logits=False,
@@ -170,200 +203,8 @@ class DiceCoefLoss(LossFunctionWrapper):
         name=name,
         label_smoothing=label_smoothing)
     self.from_logits = from_logits
-
-class BinaryCrossentropy(LossFunctionWrapper):
-  def __init__(self,
-               from_logits=False,
-               label_smoothing=0,
-               reduction=losses_utils.Reduction.AUTO,
-               name='binary_crossentropy'):
-    super(BinaryCrossentropy, self).__init__(
-        binary_crossentropy,
-        name=name,
-        reduction=reduction,
-        from_logits=from_logits,
-        label_smoothing=label_smoothing)
-    self.from_logits = from_logits
-
-class CategoricalCrossentropy(LossFunctionWrapper):
-  def __init__(self,
-               from_logits=False,
-               label_smoothing=0,
-               reduction=losses_utils.Reduction.AUTO,
-               name='categorical_crossentropy'):
-    super(CategoricalCrossentropy, self).__init__(
-        categorical_crossentropy,
-        name=name,
-        reduction=reduction,
-        from_logits=from_logits,
-        label_smoothing=label_smoothing)
-
-class SparseCategoricalCrossentropy(LossFunctionWrapper):
-  def __init__(self,
-               from_logits=False,
-               reduction=losses_utils.Reduction.AUTO,
-               name='sparse_categorical_crossentropy'):
-    super(SparseCategoricalCrossentropy, self).__init__(
-        sparse_categorical_crossentropy,
-        name=name,
-        reduction=reduction,
-        from_logits=from_logits)
-
-class Hinge(LossFunctionWrapper):
-  def __init__(self, reduction=losses_utils.Reduction.AUTO, name='hinge'):
-    super(Hinge, self).__init__(hinge, name=name, reduction=reduction)
-
-class SquaredHinge(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='squared_hinge'):
-    super(SquaredHinge, self).__init__(
-        squared_hinge, name=name, reduction=reduction)
-
-class CategoricalHinge(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='categorical_hinge'):
-    super(CategoricalHinge, self).__init__(
-        categorical_hinge, name=name, reduction=reduction)
-
-class Poisson(LossFunctionWrapper):
-  def __init__(self, reduction=losses_utils.Reduction.AUTO, name='poisson'):
-    super(Poisson, self).__init__(poisson, name=name, reduction=reduction)
-
-class LogCosh(LossFunctionWrapper):
-  def __init__(self, reduction=losses_utils.Reduction.AUTO, name='log_cosh'):
-    super(LogCosh, self).__init__(log_cosh, name=name, reduction=reduction)
-
-class KLDivergence(LossFunctionWrapper):
-  def __init__(self,
-               reduction=losses_utils.Reduction.AUTO,
-               name='kl_divergence'):
-    super(KLDivergence, self).__init__(
-        kl_divergence, name=name, reduction=reduction)
-
-class Huber(LossFunctionWrapper):
-  def __init__(self,
-               delta=1.0,
-               reduction=losses_utils.Reduction.AUTO,
-               name='huber_loss'):
-    super(Huber, self).__init__(
-        huber, name=name, reduction=reduction, delta=delta)
-
-def mean_squared_error(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  return K.mean(math_ops.squared_difference(y_pred, y_true), axis=-1)
-
-def mean_absolute_error(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  diff = math_ops.abs(
-      (y_true - y_pred) / K.maximum(math_ops.abs(y_true), K.epsilon()))
-  return 100. * K.mean(diff, axis=-1)
-
-def mean_squared_logarithmic_error(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  first_log = math_ops.log(K.maximum(y_pred, K.epsilon()) + 1.)
-  second_log = math_ops.log(K.maximum(y_true, K.epsilon()) + 1.)
-  return K.mean(math_ops.squared_difference(first_log, second_log), axis=-1)
-
-
-def _maybe_convert_labels(y_true):
-  are_zeros = math_ops.equal(y_true, 0)
-  are_ones = math_ops.equal(y_true, 1)
-  is_binary = math_ops.reduce_all(math_ops.logical_or(are_zeros, are_ones))
-
-  def _convert_binary_labels():
-    # Convert the binary labels to -1 or 1.
-    return 2. * y_true - 1.
-
-  updated_y_true = smart_cond.smart_cond(is_binary,
-                                         _convert_binary_labels, lambda: y_true)
-  return updated_y_true
-
-def squared_hinge(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  y_true = _maybe_convert_labels(y_true)
-  return K.mean(
-      math_ops.square(math_ops.maximum(1. - y_true * y_pred, 0.)), axis=-1)
-
-def hinge(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  y_true = _maybe_convert_labels(y_true)
-  return K.mean(math_ops.maximum(1. - y_true * y_pred, 0.), axis=-1)
-
-def categorical_hinge(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  pos = math_ops.reduce_sum(y_true * y_pred, axis=-1)
-  neg = math_ops.reduce_max((1. - y_true) * y_pred, axis=-1)
-  zero = math_ops.cast(0., y_pred.dtype)
-  return math_ops.maximum(neg - pos + 1., zero)
-
-def huber(y_true, y_pred, delta=1.0):
-  y_pred = math_ops.cast(y_pred, dtype=K.floatx())
-  y_true = math_ops.cast(y_true, dtype=K.floatx())
-  delta = math_ops.cast(delta, dtype=K.floatx())
-  error = math_ops.subtract(y_pred, y_true)
-  abs_error = math_ops.abs(error)
-  quadratic = math_ops.minimum(abs_error, delta)
-  linear = math_ops.subtract(abs_error, quadratic)
-  return K.mean(
-      math_ops.add(
-          math_ops.multiply(
-              ops.convert_to_tensor(0.5, dtype=quadratic.dtype),
-              math_ops.multiply(quadratic, quadratic)),
-          math_ops.multiply(delta, linear)),
-      axis=-1)
-
-def log_cosh(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-
-  def _logcosh(x):
-    return x + nn.softplus(-2. * x) - math_ops.cast(math_ops.log(2.), x.dtype)
-
-  return K.mean(_logcosh(y_pred - y_true), axis=-1)
-
-def categorical_crossentropy(y_true,
-                             y_pred,
-                             from_logits=False,
-                             label_smoothing=0):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  label_smoothing = ops.convert_to_tensor(label_smoothing, dtype=K.floatx())
-
-  def _smooth_labels():
-    num_classes = math_ops.cast(array_ops.shape(y_true)[-1], y_pred.dtype)
-    return y_true * (1.0 - label_smoothing) + (label_smoothing / num_classes)
-
-  y_true = smart_cond.smart_cond(label_smoothing,
-                                 _smooth_labels, lambda: y_true)
-  return K.categorical_crossentropy(y_true, y_pred, from_logits=from_logits)
-
-def sparse_categorical_crossentropy(y_true, y_pred, from_logits=False, axis=-1):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  return K.sparse_categorical_crossentropy(
-      y_true, y_pred, from_logits=from_logits, axis=axis)
-
-def binary_crossentropy(y_true, y_pred, from_logits=False, label_smoothing=0):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  label_smoothing = ops.convert_to_tensor(label_smoothing, dtype=K.floatx())
-
-  def _smooth_labels():
-    return y_true * (1.0 - label_smoothing) + 0.5 * label_smoothing
-
-  y_true = smart_cond.smart_cond(label_smoothing,
-                                 _smooth_labels, lambda: y_true)
-  return K.mean(
-      K.binary_crossentropy(y_true, y_pred, from_logits=from_logits), axis=-1)
-
+    
+@keras_export('keras.losses.dice_coef_loss')
 def dice_coef_loss(y_true, y_pred, smooth = 1e-07, label_smoothing=0):
   y_pred = ops.convert_to_tensor(y_pred)
   y_true = math_ops.cast(y_true, y_pred.dtype)
@@ -376,81 +217,3 @@ def dice_coef_loss(y_true, y_pred, smooth = 1e-07, label_smoothing=0):
                                  _smooth_labels, lambda: y_true)
   return (2.*K.sum(K.abs(y_true * y_pred), axis=-1)+smooth)/(K.sum(K.square(y_true),-1) + K.sum(K.square(y_pred),-1) + smooth)
   
-def kl_divergence(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  y_true = K.clip(y_true, K.epsilon(), 1)
-  y_pred = K.clip(y_pred, K.epsilon(), 1)
-  return math_ops.reduce_sum(y_true * math_ops.log(y_true / y_pred), axis=-1)
-
-def poisson(y_true, y_pred):
-  y_pred = ops.convert_to_tensor(y_pred)
-  y_true = math_ops.cast(y_true, y_pred.dtype)
-  return K.mean(y_pred - y_true * math_ops.log(y_pred + K.epsilon()), axis=-1)
-
-
-def cosine_similarity(y_true, y_pred, axis=-1):
-  y_true = nn.l2_normalize(y_true, axis=axis)
-  y_pred = nn.l2_normalize(y_pred, axis=axis)
-  return -math_ops.reduce_sum(y_true * y_pred, axis=axis)
-
-
-class CosineSimilarity(LossFunctionWrapper):
-  def __init__(self,
-               axis=-1,
-               reduction=losses_utils.Reduction.AUTO,
-               name='cosine_similarity'):
-    super(CosineSimilarity, self).__init__(
-        cosine_similarity, reduction=reduction, name=name, axis=axis)
-
-
-# Aliases.
-
-bce = BCE = binary_crossentropy
-mse = MSE = mean_squared_error
-mae = MAE = mean_absolute_error
-mape = MAPE = mean_absolute_percentage_error
-msle = MSLE = mean_squared_logarithmic_error
-kld = KLD = kullback_leibler_divergence = kl_divergence
-logcosh = log_cosh
-huber_loss = huber
-
-
-def is_categorical_crossentropy(loss):
-  result = ((isinstance(loss, CategoricalCrossentropy) or
-             (isinstance(loss, LossFunctionWrapper) and
-              loss.fn == categorical_crossentropy) or
-             (hasattr(loss, '__name__') and
-              loss.__name__ == 'categorical_crossentropy') or
-             (loss == 'categorical_crossentropy')))
-  return result
-
-def serialize(loss):
-  return serialize_keras_object(loss)
-
-def deserialize(name, custom_objects=None):
-  return deserialize_keras_object(
-      name,
-      module_objects=globals(),
-      custom_objects=custom_objects,
-      printable_module_name='loss function')
-
-def get(identifier):
-  if identifier is None:
-    return None
-  if isinstance(identifier, six.string_types):
-    identifier = str(identifier)
-    return deserialize(identifier)
-  if isinstance(identifier, dict):
-    return deserialize(identifier)
-  elif callable(identifier):
-    return identifier
-  else:
-    raise ValueError(
-        'Could not interpret loss function identifier: {}'.format(identifier))
-
-
-LABEL_DTYPES_FOR_LOSSES = {
-    losses_impl.sparse_softmax_cross_entropy: 'int32',
-    sparse_categorical_crossentropy: 'int32'
-}
