@@ -99,3 +99,16 @@ def fbeta(y_true, y_pred, beta=1):
 def f1score(y_true, y_pred):
 
     return fbeta(y_true, y_pred, beta=1)
+
+
+def dice_coef_loss(y_true, y_pred, smooth = 1e-07, label_smoothing=0):
+  y_pred = ops.convert_to_tensor(y_pred)
+  y_true = math_ops.cast(y_true, y_pred.dtype)
+  label_smoothing = ops.convert_to_tensor(label_smoothing, dtype=K.floatx())
+
+  def _smooth_labels():
+    return y_true * (1.0 - label_smoothing) + 0.5 * label_smoothing
+
+  y_true = smart_cond.smart_cond(label_smoothing, _smooth_labels, lambda: y_true)
+  return (2.*K.sum(K.abs(y_true * y_pred), axis=-1)+smooth)/(K.sum(K.square(y_true),-1) + K.sum(K.square(y_pred),-1) + smooth)
+  
