@@ -31,15 +31,15 @@ pip install -U --no-deps talos
 
 #### Install from monthly
 ```python
-pip install --upgrade --no-deps --force-reinstall git+https://github.com/autonomio/talos
+pip install --upgrade --no-deps --force-reinstall git+https://github.com/gj21kr/talos
 ```
 
 #### Install from weekly
 ```python
-pip install --upgrade --no-deps --force-reinstall git+https://github.com/autonomio/talos@dev
+pip install --upgrade --no-deps --force-reinstall git+https://github.com/gj21kr/talos@dev
 ```
 
 #### Install from daily
 ```python
-pip install --upgrade --no-deps --force-reinstall git+https://github.com/autonomio/talos@daily-dev
+pip install --upgrade --no-deps --force-reinstall git+https://github.com/gj21kr/talos@daily-dev
 ```

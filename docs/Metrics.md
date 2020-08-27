@@ -14,6 +14,7 @@ Several common and useful performance metrics are available through `talos.utils
 - mape
 - msle
 - rmsle
+- dice_coef_loss
 
 You can use these metrics as you would Keras metrics:
 

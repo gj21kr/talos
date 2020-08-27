@@ -12,8 +12,8 @@
     <img src="https://img.shields.io/travis/autonomio/talos/master.svg?style=for-the-badge&logo=appveyor" alt="Talos Travis">
   </a>
 
-  <a href="https://coveralls.io/github/autonomio/talos">
-    <img src="https://img.shields.io/coveralls/github/autonomio/talos.svg?style=for-the-badge&logo=appveyor" alt="Talos Coveralls">
+  <a href="https://coveralls.io/github/gj21kr/talos">
+    <img src="https://img.shields.io/coveralls/github/gj21kr/talos.svg?style=for-the-badge&logo=appveyor" alt="Talos Coveralls">
   </a>
 
 </p>
@@ -24,10 +24,10 @@
   <a href="#Examples">Examples</a> •
   <a href="#Install">Install</a> •
   <a href="#Support">Support</a> •
-  <a href="https://autonomio.github.io/talos/">Docs</a> •
-  <a href="https://github.com/autonomio/talos/issues">Issues</a> •
+  <a href="https://gj21kr.github.io/talos/">Docs</a> •
+  <a href="https://github.com/gj21kr/talos/issues">Issues</a> •
   <a href="#License">License</a> •
-  <a href="https://github.com/autonomio/talos/archive/master.zip">Download</a>
+  <a href="https://github.com/gj21kr/talos/archive/master.zip">Download</a>
 </p>
 <hr>
 <p align="center">
@@ -104,7 +104,7 @@ Stable version:
 
 Daily development version:
 
-#### `pip install git+https://github.com/autonomio/talos`
+#### `pip install git+https://github.com/gj21kr/talos`
 
 <hr>
 
@@ -124,16 +124,16 @@ Daily development version:
 
 If you use Talos for published work, please cite:
 
-`Autonomio Talos [Computer software]. (2019). Retrieved from http://github.com/autonomio/talos.`
+`gj21kr Talos [Computer software]. (2019). Retrieved from http://github.com/gj21kr/talos.`
 
 <hr>
 
 ### 📃 License
 
-[MIT License](https://github.com/autonomio/talos/blob/master/LICENSE)
+[MIT License](https://github.com/gj21kr/talos/blob/master/LICENSE)
 
-[github issue tracker]: https://github.com/automio/talos/issues
-[docs]: https://autonomio.github.io/talos/
-[wiki]: https://github.com/autonomio/talos/wiki
+[github issue tracker]: https://github.com/gj21kr/talos/issues
+[docs]: https://gj21kr.github.io/talos/
+[wiki]: https://github.com/gj21kr/talos/wiki
 [stack overflow]: https://stackoverflow.com/questions/tagged/talos
 [spectrum chat]: https://spectrum.chat/talos
