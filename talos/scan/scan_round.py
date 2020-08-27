@@ -52,8 +52,10 @@ def scan_round(self):
 
         # try TF specific and pass for everyone else
         try:
-            from keras import backend as K
-            K.clear_session()
+            import tensorflow as tf
+            tf.reset_default_graph()
+            #from keras import backend as K
+            #K.clear_session()
         except ImportError:
             pass
 

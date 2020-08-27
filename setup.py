@@ -13,7 +13,7 @@ syntax or templates to learn.
 DISTNAME = 'talos'
 MAINTAINER = 'Mikko Kotila'
 MAINTAINER_EMAIL = 'mailme@mikkokotila.com'
-URL = 'http://autonom.io'
+URL = 'http://gj21kr.io'
 LICENSE = 'MIT'
 DOWNLOAD_URL = 'https://github.com/gj21kr/talos/'
 VERSION = '0.6.7'
