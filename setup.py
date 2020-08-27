@@ -60,6 +60,7 @@ if __name__ == "__main__":
                     'talos.parameters',
                     'talos.reducers',
                     'talos.metrics',
+                    'talos.losses',
                     'talos.commands',
                     'talos.logging',
                     'talos.autom8'],
